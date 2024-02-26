@@ -1,0 +1,46 @@
+---
+title: "las10014_C"
+author: "Lauren Shelby"
+date: "2024-02-21"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Connecting to las10014_db.sqlite database created in Part B 
+
+```{r cars}
+# Loading SQLite in R
+library(RSQLite)
+
+# Connecting R to SQLite and the database created in part B
+drv<-dbDriver("SQLite")
+con<-dbConnect(drv, "las10014_db.sqlite")
+```
+
+
+```{r}
+# Creating a variable to store the query where we are selecting ProbeName and 
+  # ExperimentName to calculate average expvalue for each ProbeName and Experiment
+  # by joining the Probes and Experiment tables to Data by their ID columns 
+average_exp <- dbGetQuery(con, "SELECT p.probename AS ProbeName,
+                                       e.expname AS ExperimentName,
+                                       AVG(d.expvalue) AS AverageExpValue
+                                FROM 
+                                       Data d
+                                JOIN 
+                                       Probes p ON d.probeid = p.probeid
+                                JOIN 
+                                       Experiment e ON d.expid = e.expid
+                                GROUP BY 
+                                       p.probename, e.expname;") 
+
+head(average_exp)
+```
+
+
+

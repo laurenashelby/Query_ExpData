@@ -1,0 +1,170 @@
+---
+title: "las10014_create_db"
+author: "Lauren Shelby"
+date: "2024-02-21"
+output:
+  html_document:
+    df_print: paged
+---
+
+## Homework 2: Part B 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Question 1 
+
+```{r cars}
+# Loading 'expvalues.txt' into the environment. 
+expvalues <- read.table("expvalues.txt")
+head(expvalues)
+# Each row is a probe, each column an experiment 
+```
+
+```{r}
+# Setting the probe names as its own column to add into the database
+expvalues$ProbeName <- rownames(expvalues)
+head(expvalues)
+```
+
+
+### Question 2 
+
+```{r}
+#Connecting RSQLite 
+library(RSQLite)
+
+drv<-dbDriver("SQLite")
+con<-dbConnect(drv, "las10014_db.sqlite")
+```
+
+Creating the 'Experiment' table in 'las10014_db.sqlite'
+
+```{r}
+# Checking if table exists, if it does dropping the table 
+if (dbExistsTable(con, "Experiment")) {
+  dbSendQuery(con, "drop table Experiment")
+}
+# Creating the 'Experiment' table with the proper column names, types, and keys 
+dbSendQuery(con, "CREATE TABLE Experiment (expid INTEGER PRIMARY KEY NOT NULL , 
+                                           expname VARCHAR)")
+
+# Creating the proper data frame for inserting expids 1 & 2 for expnames 
+  # 'Control' and 'Treatment' 
+expids_names <- data.frame(Col1 = c(1,2), 
+                           Col2 = c('Control', 'Treatment'))
+
+# Inserting the values from 'expvalues' table into 'Experiment' table 
+insert_exp <- dbSendQuery(con, "insert into Experiment (expid, expname)
+                          values ($Col1, $Col2)")
+dbBind(insert_exp, expids_names)
+
+# Checking to see if Experiment table is correct 
+dbGetQuery(con, "SELECT * from Experiment")
+
+```
+Creating the 'Probes' table in 'las10014_db.sqlite' 
+
+```{r}
+# Checking if table exists, if it does dropping the table 
+if (dbExistsTable(con, "Probes")) {
+  dbSendQuery(con, "drop table Probes")
+}
+
+# Creating the proper data frame for inserting probeids for every row of probenames 
+probeids_names <- data.frame(ProbeName = expvalues$ProbeName)
+probeids_names$ProbeID <- seq.int(nrow(probeids_names))
+
+# Creating the 'Probes' table with the proper column names, types, and keys 
+dbSendQuery(con, "CREATE TABLE Probes (probeid INTEGER PRIMARY KEY NOT NULL , 
+                                           probename VARCHAR)")
+
+# Inserting the values from 'expvalues' table into 'Probes' table 
+insert_prob <- dbSendQuery(con, "insert into Probes (probeid, probename)
+                          values ($ProbeID, $ProbeName)")
+dbBind(insert_prob, probeids_names)
+
+# Checking to see if Probes table is correct 
+dbGetQuery(con, "SELECT * from Probes limit 10")
+```
+Creating the 'Data' table in 'las10014_db.sqlite' 
+
+```{r}
+library(tidyverse)
+
+# Checking if table exists, if it does dropping the table 
+if (dbExistsTable(con, "Data")) {
+  dbSendQuery(con, "drop table Data")
+}
+
+# Creating the 'Data' table with the proper column names, types, and keys 
+  # Connecting 'expid' and 'probeid' to the Experiment and Probe tables as foreign keys 
+dbSendQuery(con, "CREATE TABLE Data (dataid INTEGER PRIMARY KEY NOT NULL, expid INTEGER, 
+probeid INTEGER, expvalue INTEGER, FOREIGN KEY (expid) REFERENCES Experiment(expid), 
+FOREIGN KEY (probeid) REFERENCES Probe(probeid))")
+
+```
+
+Normalizing the 'expvalues' dataset for insertion into the 'Data' table of 'las10014_db.sqlite'
+
+```{r}
+
+# Adding the ProbeID Column 
+expvalues$ProbeID <- seq.int(nrow(expvalues))
+head(expvalues)
+
+# Combining the Control and Treatment columns together so there's just one 'Control' and one 'Treatment' 
+expvalues_normal <- expvalues %>% 
+  pivot_longer(cols = c(Control1, Control2, Control3), names_to = NULL, values_to = "Control_Value") %>%
+  pivot_longer(cols = c(Treatment1, Treatment2, Treatment3), names_to = NULL, values_to = "Treatment_Value")
+
+
+head(expvalues_normal)
+```
+
+```{r}
+# Combining the Control_Value/Treatment_Value columns
+expvalues_normal <- expvalues_normal %>% 
+  pivot_longer(cols = c(Control_Value, Treatment_Value), names_to = "ExpID", values_to = "ExpValue")
+
+head(expvalues_normal)
+```
+
+```{r}
+# Turning the ExpID column into the proper ExpID key of 1 for Control and 2 for Treatment 
+expvalues_normal$ExpID <- ifelse(expvalues_normal$ExpID == 'Control_Value', 1, ifelse(expvalues_normal$ExpID == 'Treatment_Value', 2, expvalues_normal$ExpID))
+
+head(expvalues_normal)
+```
+
+
+```{r}
+# Adding in a column to 'expvalues_normal' for the dataID for each individual piece of data
+expvalues_normal$DataID <- seq.int(nrow(expvalues_normal))
+head(expvalues_normal)
+```
+
+```{r}
+# Removing the 'ProbeName' column 
+expvalues_normal <- subset(expvalues_normal, select = -c(ProbeName))
+head(expvalues_normal)
+```
+
+
+Now finally adding the columns from 'expvalues_normal' into the Data table of 'las10014_db.sqlite'
+
+```{r}
+# Inserting the values from 'expvalues_normal' table into 'Data' table 
+insert_dat <- dbSendQuery(con, "insert into Data (dataid, expid, probeid, expvalue)
+                          values ($DataID, $ExpID, $ProbeID, $ExpValue)")
+dbBind(insert_dat, expvalues_normal)
+
+# Checking to see if Probes table is correct 
+dbGetQuery(con, "SELECT * from Data limit 10")
+```
+
+```{r}
+dbDisconnect(con)
+```
+
